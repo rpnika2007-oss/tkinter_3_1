@@ -1,0 +1,164 @@
+from tkinter import *
+import math
+import time
+from datetime import datetime, date
+
+SIZE = 440
+CX = CY = SIZE // 2
+BG = "black"
+
+root = Tk()
+root.title("Часы")
+root.configure(bg=BG)
+root.resizable(False, False)
+
+canvas = Canvas(root, width=SIZE, height=SIZE, bg=BG,
+                highlightthickness=0)
+canvas.pack()
+
+def polygon(length, width):
+    return [(0, 12), (-width, -length * 0.2),
+            (-width * 0.45, -length * 0.88),
+            (0, -length), (width * 0.45, -length * 0.88),
+            (width, -length * 0.2)]
+
+def draw_hand(hand, shape, angle):
+    a = math.radians(angle - 90)
+    points = []
+    for x, y in shape:
+        points.extend([CX + x * math.cos(a) - y * math.sin(a),
+                       CY + x * math.sin(a) + y * math.cos(a)])
+    canvas.coords(hand, *points)
+
+def line_hand(hand, angle, length, tail=0):
+    a = math.radians(angle - 90)
+    canvas.coords(hand, CX - tail * math.cos(a),
+                  CY - tail * math.sin(a),
+                  CX + length * math.cos(a),
+                  CY + length * math.sin(a))
+
+hour = canvas.create_polygon(0, 0, 0, 0, 0, 0,
+                             fill="#8A4FFF", outline="")
+minute = canvas.create_polygon(0, 0, 0, 0, 0, 0,
+                               fill="#9AFF65", outline="")
+second = canvas.create_line(0, 0, 0, 0,
+                            fill="#FF4F81", width=4, capstyle=ROUND)
+
+canvas.create_oval(CX-5, CY-5, CX+5, CY+5,
+                   fill="white", outline="")
+
+hour_shape = polygon(85, 5)
+minute_shape = polygon(110, 3)
+
+weekdays = ["Понедельник", "Вторник", "Среда", "Четверг",
+            "Пятница", "Суббота", "Воскресенье"]
+months = ["января", "февраля", "марта", "апреля", "мая",
+          "июня", "июля", "августа", "сентября", "октября",
+          "ноября", "декабря"]
+
+date_label = canvas.create_text(CX, SIZE-75, fill="#BBBBBB",
+                                font=("Arial", 10))
+time_label = canvas.create_text(CX, SIZE-52, fill="#9AFF65",
+                                font=("Consolas", 14, "bold"))
+
+# Приблизительная фаза Луны
+new_moon = date(2000, 1, 6)
+moon_x, moon_y, moon_r = SIZE-38, SIZE-38, 18
+canvas.create_text(moon_x, moon_y-25, text="Луна",
+                   fill="#888888", font=("Arial", 9))
+canvas.create_oval(moon_x-moon_r, moon_y-moon_r,
+                   moon_x+moon_r, moon_y+moon_r,
+                   fill="#F5F0C0", outline="#999999")
+moon_shadow = canvas.create_oval(0, 0, 0, 0,
+                                  fill=BG, outline="")
+
+def update_moon(day):
+    phase = ((day-new_moon).days % 2953) / 2953
+    phase = ((day-new_moon).days % 29531) / 29531
+    phase *= 10
+    phase = (phase * 29.530588 / 29.530588) % 1
+    offset = -2*moon_r*phase if phase < 0.5 else 2*moon_r*(1-phase)
+    canvas.coords(moon_shadow, moon_x-moon_r+offset, moon_y-moon_r,
+                  moon_x+moon_r+offset, moon_y+moon_r)
+
+class Chronograph:
+    def __init__(self):
+        self.elapsed = 0
+        self.started = 0
+        self.running = False
+        self.laps = []
+        self.label = canvas.create_text(75, 22, text="00:00.00",
+                                        fill="#FF4F81",
+                                        font=("Consolas", 12, "bold"))
+
+    def current(self):
+        return self.elapsed + (time.monotonic()-self.started if self.running else 0)
+
+    def start(self):
+        if not self.running:
+            self.started = time.monotonic()
+            self.running = True
+
+    def stop(self):
+        if self.running:
+            self.elapsed = self.current()
+            self.running = False
+
+    def reset(self):
+        self.running = False
+        self.elapsed = 0
+        self.laps.clear()
+        self.draw()
+
+    def lap(self):
+        if self.running:
+            self.laps.append(self.current())
+            print(f"Отсечка {len(self.laps)}: {self.format(self.laps[-1])}")
+
+    @staticmethod
+    def format(t):
+        m, s = divmod(t, 60)
+        return f"{int(m):02d}:{s:05.2f}"
+
+    def draw(self):
+        canvas.itemconfig(self.label, text=self.format(self.current()))
+
+chrono = Chronograph()
+
+buttons = Frame(root, bg=BG)
+buttons.pack(pady=5)
+
+for text, command, color in [
+    ("Старт", chrono.start, "#9AFF65"),
+    ("Стоп", chrono.stop, "#F2E13B"),
+    ("Отсечка", chrono.lap, "#8A4FFF"),
+    ("Сброс", chrono.reset, "#FF4F81")
+]:
+    Button(buttons, text=text, command=command, bg=color,
+           fg="black", relief=FLAT, width=8).pack(side=LEFT, padx=2)
+
+last_date = None
+
+def tick():
+    global last_date
+    now = datetime.now()
+    s = now.second + now.microsecond / 1_000_000
+    m, h = now.minute, now.hour % 12
+
+    draw_hand(hour, hour_shape, (h + m/60 + s/3600)*30)
+    draw_hand(minute, minute_shape, (m + s/60)*6)
+    line_hand(second, s*6, 145, 25)
+
+    canvas.itemconfig(date_label,
+        text=f"{now.day} {months[now.month-1]} {now.year} • {weekdays[now.weekday()]}")
+    canvas.itemconfig(time_label, text=now.strftime("%H:%M:%S"))
+
+    if now.date() != last_date:
+        update_moon(now.date())
+        last_date = now.date()
+
+    chrono.draw()
+    root.after(30, tick)
+
+tick()
+root.mainloop()
