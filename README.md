@@ -33,4 +33,4 @@ python main.py
 
 - `main.py` — основной код программы.
 - `README.md` — описание проекта.
-- `requirements.txt` — информация о зависимостях.
+
